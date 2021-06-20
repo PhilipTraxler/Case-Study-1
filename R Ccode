@@ -237,3 +237,97 @@ plot(n)
 train = train %>% filter(!is.na(Ounces))
 # Prediction
 output = compute(n, newdata = train[,1])
+
+
+
+
+###Exploratory Data Analysis
+
+#Adding Regions to Data frame
+South = c(" TX"," OK"," AR"," LA"," MS"," AL"," GA"," FL"," TN"," KY"," WV"," VA"," NC"," SC", " MD"," DE")
+Northeast = c(" ME"," NH"," VT"," MA"," CT"," RI"," NY"," NJ"," PA", " DC")
+Midwest = c(" OH"," MI"," IL"," IN"," WI"," MN"," IA"," MO"," ND"," SD"," NE"," KS")
+West = c(" AK"," HI"," WA"," OR"," CA"," NV"," ID"," UT"," AZ"," NM"," CO"," WY"," MT")
+
+#Adding Regions to Medians
+for (i in 1:nrow(Medians)) {
+  
+  if (Medians[i,1] %in% South){
+    Medians$Region[i]<- "South"
+  } 
+  
+  if (Medians[i,1] %in% Northeast){
+    Medians$Region[i]<- "Northeast"
+  } 
+  
+  if (Medians[i,1] %in% Midwest){
+    Medians$Region[i]<- "Midwest"
+  } 
+  
+  if (Medians[i,1] %in% West){
+    Medians$Region[i]<- "West"
+  } 
+}
+
+#Adding Regions to the Joined Data
+for (i in 1:nrow(JoinedData)) {
+  if (JoinedData[i,10] %in% South){
+    JoinedData$Region[i]<- "South"
+  }
+  if (JoinedData[i,10] %in% Northeast){
+    JoinedData$Region[i]<- "Northeast"
+  }
+  if (JoinedData[i,10] %in% Midwest){
+    JoinedData$Region[i]<- "Midwest"
+  }
+  if (JoinedData[i,10] %in% West){
+    JoinedData$Region[i]<- "West"
+  }
+}
+
+#Adding Regions to the Breweries
+for (i in 1:nrow(Breweries)) {
+  if (Breweries[i,4] %in% South){
+    Breweries$Region[i]<- "South"
+  }
+  if (Breweries[i,4] %in% Northeast){
+    Breweries$Region[i]<- "Northeast"
+  }
+  if (Breweries[i,4] %in% Midwest){
+    Breweries$Region[i]<- "Midwest"
+  }
+  if (Breweries[i,4] %in% West){
+    Breweries$Region[i]<- "West"
+  }
+}
+
+##1. Breweries Distribution
+#Histogram of Breweries Increasing Frequency
+ggplot(Breweries, aes(x= fct_infreq(State), color = Region)) +
+  geom_histogram(stat="count") +
+  ggtitle("Number of Breweries in the United States") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  xlab("State") + ylab("Number of Breweries") +
+  geom_text(stat="count", aes(label=..count.., hjust =0.5, vjust=-1.1))
+
+#Histogram by Region
+ggplot(Breweries, aes(x = fct_infreq(State), fill = Region)) +
+  geom_histogram(stat = "count") +
+  ggtitle("Number of Breweries in the United States") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  xlab("State") + ylab("Number of Breweries") +
+  geom_text(stat = "count", aes(label=..count.., hjust =-.5))+
+  coord_flip() +
+  facet_grid(Region ~ ., scales = "free", space = "free") +
+  theme_wsj()
+
+
+MergedDataV2 <- read_excel("Desktop/MergedDataV2.xlsx")
+#Variable comparisons
+ggpairs(select(MergedDataV2,Avg_ABV,Avg_IBU,Consumer.Expenditure.Alcohol,Retail.Demand.Alcohol,Age.20s,Age.30s,Age.40s), cardinality_threshold = NULL)
+ggplot(MergedDataV2, aes(x=Avg_ABV, y=Consumer.Expenditure.Alcohol)) + geom_point()
+ggpairs(select(MergedDataV2,Avg_ABV,Age.20s,Age.30s,Age.40s))
+ggplot(MergedDataV2, aes(x=Age.20s, y=Avg_IBU)) + geom_point()
+ggplot(MergedDataV2, aes(x=Age.30s, y=Avg_IBU)) + geom_point()
+
+ 
