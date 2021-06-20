@@ -1,0 +1,239 @@
+# Beer Study
+library(dlookr)
+library(visdat)
+library(plotly)
+library(missRanger)
+library(ggplot2)
+library(magrittr)
+library(ranger)
+library(dplyr)
+library(class)
+library(caret)
+library(e1071)
+library(GGally)
+library(stringi)
+library(stringr)
+library(xgboost)
+library(car)
+library(Matrix)
+library(keras)
+library(forecast)
+library(neuralnet)
+Beers = read.csv("/Users/phili/OneDrive/Documents/Module 8 SMU Masters/Beers.csv")
+Breweries = read.csv("/Users/phili/OneDrive/Documents/Module 8 SMU Masters/Breweries.csv")
+Breweries = Breweries %>% filter(!is.na(Name))
+Beers2 = Beers
+JoinedData_Unclean = left_join(Beers2,Breweries,bu = c("Brewery_id" = "Brew_ID"))
+Beers2$IBU = imputate_na(Beers,IBU,ABV, method = "mice") # Filling in Missing IBU
+Beers2$ABV = imputate_na(Beers,ABV,IBU, method = "mice") # Filling in Missing ABV
+JoinedData = left_join(Beers2,Breweries,by = c("Brewery_id" = "Brew_ID"))
+
+head(JoinedData, 6)
+tail(JoinedData, 6)
+
+plot_na_pareto(JoinedData, only_na = TRUE)
+plot_na_intersect(JoinedData)
+vis_miss(JoinedData)
+
+
+
+Medians = JoinedData %>% group_by(State) %>% summarize(median_ABV = median(ABV),median_IBU = median(IBU)) #Defining Medians
+
+Medians %>% ggplot(aes(x = median_ABV, fill = State)) + geom_histogram() #Plotting Medians
+
+
+JoinedData[which.max(JoinedData$IBU),] %>% select(State) #Max IBU by state
+JoinedData[which.max(JoinedData$ABV),] %>% select(State) #Max ABV by state
+
+
+summary(JoinedData) # Summary of Data
+
+
+JoinedData %>% ggplot(aes(x = ABV, y = IBU, color = State)) + geom_jitter() + geom_smooth() # Scatterplot
+JoinedData %>% select(ABV,IBU) %>% ggpairs() # Deriving Correlation
+
+
+IPA<-filter(JoinedData, grepl('IPA|(IPA)',Style))#Getting IPAs
+Ale = JoinedData %>% filter(str_detect(Style,"Ale"))#Getting Ales
+Ale = Ale[!grepl("IPA",Ale$Style),] #filtering out (IPA)
+Ale$Category = "Ale"
+IPA$Category = "IPA"
+CombinedIPA_Ale = rbind(IPA,Ale)
+CombinedIPA_Ale$ABV = as.numeric(CombinedIPA_Ale$ABV)
+CombinedIPA_Ale$IBU = as.numeric(CombinedIPA_Ale$IBU)
+
+
+# KNN Classifier
+
+set.seed(90)
+splitPerc = .70
+trainIndices = sample(1:dim(CombinedIPA_Ale)[1],round(splitPerc * dim(CombinedIPA_Ale)[1]))
+
+
+train = CombinedIPA_Ale[trainIndices,]
+test = CombinedIPA_Ale[-trainIndices,]
+
+# k = 3
+classifications = knn(train[,c(3,4)],test[,c(3,4)],train$Category, prob = TRUE, k = 3)
+table(classifications,test$Category)
+confusionMatrix(table(classifications,test$Category))
+
+
+
+#Optimal Value of K
+accs = data.frame(accuracy = numeric(50), k = numeric(50))
+for(i in 1:50)
+{
+  classifications = knn(train[,c(3,4)],test[,c(3,4)],train$Category, prob = TRUE, k = i)
+  table(classifications,test$Category)
+  CM = confusionMatrix(table(classifications,test$Category))
+  accs$accuracy[i] = CM$overall[1]
+  accs$k[i] = i
+}
+plot(accs$k,accs$accuracy, type = "l", xlab = "k")
+
+max(accs$accuracy)
+
+# MLR
+JoinedData2 = JoinedData %>% select(Ounces, ABV, IBU, Category)
+
+fit = lm(ABV + Category + Ounces + IBU, data = AllData) # fitting the model
+summary(fit) 
+coefficients = coefficients(fit) #Building Coefficients
+confit = confint(fit, level = 0.99) #Confidence interval
+fitted = fitted(fit) # Fitting the results
+residuals = residuals(fit) # Determining Residuals
+anova = aov(fit) # Anova analysis of Model
+vcov = vcov(fit) # Variable covariance of model
+influence = influence(fit) #Determining influence of variables
+plot(anova(fit)) # Plotting the anova values
+plot(fitted(fit)) +xlab("Residual Distance") +ylab("Number of Occurances") +ggtitle("Residual Results")
+
+
+# XG Boosting
+
+IPA<-filter(JoinedData, grepl('IPA|(IPA)',Style))#Getting IPAs
+Ale = JoinedData %>% filter(str_detect(Style,"Ale"))#Getting Ales
+
+Ale$Category = "1"
+IPA$Category = "2"
+CombinedIPA_Ale = rbind(IPA,Ale)
+set.seed(90)
+splitPerc = .70
+trainIndices = sample(1:dim(CombinedIPA_Ale)[1],round(splitPerc * dim(CombinedIPA_Ale)[1]))
+
+
+train = CombinedIPA_Ale[trainIndices,]
+test = CombinedIPA_Ale[-trainIndices,]
+
+ohe_feats = c('Beer_ID','ABV','IBU','Ounces','Category')
+dummies = dummyVars(~ABV+IBU+Ounces+Category,data = CombinedIPA_Ale)
+CombinedIPA_Ale$ABV = as.numeric(CombinedIPA_Ale$ABV)
+CombinedIPA_Ale$IBU = as.numeric(CombinedIPA_Ale$IBU)
+dummies = dummyVars(~ ABV + IBU + Ounces + Category, data = CombinedIPA_Ale)
+CombinedIPA_Ale_ohe = as.data.frame(predict(dummies, newdata = CombinedIPA_Ale))
+CombinedIPA_Ale_Combined = cbind(CombinedIPA_Ale[,c(which(colnames(CombinedIPA_Ale) %in% ohe_feats))],CombinedIPA_Ale_ohe)
+CombinedIPA_Ale_Combined$agena = as.factor(ifelse(CombinedIPA_Ale_Combined$Category < 0,1,2))
+CombinedIPA_Ale_Combined = CombinedIPA_Ale_Combined[,c('Category',features_selected)]
+x = CombinedIPA_Ale_Combined[CombinedIPA_Ale_Combined$Beer_ID %in% train$Beer_ID,]
+labels = train[c('Beer_ID','ABV','IBU','Ounces','Category'),]
+labels$Category[labels$Category == "1"] = TRUE
+labels$Category[labels$Category == "0"] = FALSE
+y = labels
+x_test = CombinedIPA_Ale_Combined[CombinedIPA_Ale_Combined$Beer_ID %in% test$Beer_ID,]
+xgb <- xgboost(data = data.matrix(x[,-1]), 
+               label = y, 
+               eta = 0.1,
+               max_depth = 15, 
+               nround=25, 
+               subsample = 0.5,
+               colsample_bytree = 0.5,
+               seed = 1,
+               eval_metric = "merror",
+               objective = "multi:softprob",
+               num_class = 12,
+               nthread = 3
+)
+
+##XG Boosting Attempt 2
+
+UnjoinedData = anti_join(JoinedData,CombinedIPA_Ale, by = "Beer_ID")
+UnjoinedData
+UnjoinedDataFinal = unique(UnjoinedData[,c("Name.x","Name.y","City","State","ABV","IBU","Beer_ID","Brewery_id","Style","Ounces")])
+UnjoinedDataFinal
+UnjoinedDataFinal$Category = "Other"
+UnjoinedDataFinal$Category = "2"
+AllData = rbind(CombinedIPA_Ale,UnjoinedDataFinal)
+AllData$Category = as.numeric(AllData$Category)
+#Partioning Data
+
+set.seed(1500)
+ind = sample(2,nrow(AllData), replace = TRUE, prob = c(0.7,0.3))
+train = AllData[ind == 1,]
+test = AllData[ind == 2,]
+
+
+#Creating Matrix and One Hot Coding for Factor Variables
+trainm = sparse.model.matrix(Category ~. -1, data = train)
+train_label = train[,"Category"]
+train_matrix = xgb.DMatrix(data = as.matrix(trainm), label = train_label)
+
+testm = sparse.model.matrix(Category~. -1, data = test)
+test_label = test[,"Category"]
+test_matrix = xgb.DMatrix(data=as.matrix(testm), label = test_label)
+
+# Parameters
+
+nc = length(unique(train_label))
+xgb_params = list("objective" = "multi:softprob",
+                  "eval_metric" = "mlogloss",
+                  "num_class" = as.numeric(nc))
+watchlist = list(train = train_matrix, test = test_matrix)
+
+
+# eXtreme Gradient Boosting Model
+
+bst_model = xgb.train(params = xgb_params,
+                      data = train_matrix,
+                      nround = 10,
+                      watchlist = watchlist)
+
+
+
+# Multi-Layer Neural Network
+
+AllData
+factor(AllData$Category)
+AllData2 = AllData
+AllData2 = AllData %>% select(IBU, ABV, Category,Ounces)
+
+
+#Normalize
+AllData2$IBU = (AllData2$IBU - min(AllData2$IBU))/(max(AllData2$IBU)- min(AllData2$IBU))
+AllData2$ABV = (AllData2$ABV - min(AllData2$ABV))/(max(AllData2$ABV)- min(AllData2$ABV))
+AllData2$Ounces = (AllData2$Ounces - min(AllData2$Ounces))/(max(AllData2$Ounces)- min(AllData2$Ounces))
+AllData2$Category 
+#Data Partioning
+set.seed(2200)
+ind = sample(2, nrow(AllData2), replace = TRUE, prob=(c(.7,.3)))
+
+AllData2 = AllData2 %>% filter(Category != 2)
+AllData2$Category = as.integer(AllData2$Category)
+AllData2 = AllData2 %>% filter(!is.na(Ounces))
+train = AllData2[ind == 1,]
+test = AllData2[ind == 2,]
+train = train %>% filter(!is.na(Ounces))
+test = test %>% filter(!is.na(Ounces))
+#Nerual Networks
+
+library(neuralnet)
+set.seed(1230)
+n = neuralnet(Category ~ ABV+IBU+Ounces, 
+              data = train,
+              hidden = 1,
+              err.fct = "ce",
+              linear.output = FALSE)
+plot(n)
+train = train %>% filter(!is.na(Ounces))
+# Prediction
+output = compute(n, newdata = train[,1])
